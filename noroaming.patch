@@ -1,0 +1,81 @@
+diff -urN a/src/wl/sys/wl_cfg80211_hybrid.c b/src/wl/sys/wl_cfg80211_hybrid.c
+--- a/src/wl/sys/wl_cfg80211_hybrid.c	2015-09-12 16:39:28.000000000 +0900
++++ b/src/wl/sys/wl_cfg80211_hybrid.c	2015-09-12 16:50:44.908084821 +0900
+@@ -2150,8 +2150,12 @@
+ 	WL_DBG(("\n"));
+ 
+ 	if (status == WLC_E_STATUS_SUCCESS) {
+-		err = wl_bss_roaming_done(wl, ndev, e, data);
+-		wl->profile->active = true;
++		if (!wl_bss_roaming_done(wl, ndev, e, data)) {
++			wl->profile->active = true;
++		} else {
++			wl_link_down(wl);
++			wl_init_prof(wl->profile);
++		}
+ 	}
+ 
+ 	return err;
+@@ -2357,10 +2361,26 @@
+ 	struct wl_cfg80211_connect_info *conn_info = wl_to_conn(wl);
+ 	s32 err = 0;
+ 
++	struct wireless_dev *wdev;
++	struct cfg80211_bss *bss;
++
+ 	wl_get_assoc_ies(wl);
+ 	memcpy(wl->profile->bssid, &e->addr, ETHER_ADDR_LEN);
+ 	memcpy(&wl->bssid, &e->addr, ETHER_ADDR_LEN);
+ 	wl_update_bss_info(wl);
++
++	wdev = ndev->ieee80211_ptr;
++	bss = cfg80211_get_bss(
++			wdev->wiphy, &wl->conf->channel, (u8 *)&wl->bssid, wdev->ssid,
++			wdev->ssid_len, WLAN_CAPABILITY_ESS, WLAN_CAPABILITY_ESS);
++
++	if (!bss) {
++		WL_ERR(("bss is null.\n"));
++		clear_bit(WL_STATUS_CONNECTED, &wl->status);
++		cfg80211_disconnected(ndev, 0, NULL, 0, GFP_KERNEL);
++		return -1;
++	}
++
+ 	cfg80211_roamed(ndev,
+ #if LINUX_VERSION_CODE > KERNEL_VERSION(2, 6, 39)
+ 			&wl->conf->channel,	 
+@@ -2892,6 +2912,10 @@
+ 
+ s32 wl_cfg80211_up(struct net_device *ndev)
+ {
++	s32 roam_scan_period;
++	s32 roam_trigger[2];
++	s32 roam_delta[2];
++
+ 	struct wl_cfg80211_priv *wl = ndev_to_wl(ndev);
+ 	s32 err = 0;
+ 	struct wireless_dev *wdev = ndev->ieee80211_ptr;
+@@ -2903,6 +2927,24 @@
+ 	} 
+ 
+ 	wl_update_wowl(ndev);
++
++	// Disable roaming practically by using non-sense values.
++	roam_scan_period = 86400;
++	roam_trigger[0] = -99;
++	roam_trigger[1] = 3; // WLC_BAND_2G | WLC_BAND_5G;
++	roam_delta[0] = 99;
++	roam_delta[1] = 3; // WLC_BAND_2G | WLC_BAND_5G;
++
++	if (wl_dev_ioctl(ndev, WLC_SET_ROAM_SCAN_PERIOD, &roam_scan_period, sizeof(roam_scan_period)) < 0) {
++		WL_ERR(("Failed to set roam scan period\n"));
++	}
++	if (wl_dev_ioctl(ndev, WLC_SET_ROAM_DELTA, roam_delta, sizeof(roam_delta)) < 0) {
++		WL_ERR(("Failed to set roam delta\n"));
++	}
++	if (wl_dev_ioctl(ndev, WLC_SET_ROAM_TRIGGER, roam_trigger, sizeof(roam_trigger)) < 0) {
++		WL_ERR(("Failed to set roam trigger\n"));
++	}
++
+ 	return 0;
+ }
+ 
