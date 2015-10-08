@@ -36,7 +36,7 @@ diff -urN a/src/wl/sys/wl_cfg80211_hybrid.c b/src/wl/sys/wl_cfg80211_hybrid.c
 +	if (!bss) {
 +		WL_ERR(("bss is null.\n"));
 +		clear_bit(WL_STATUS_CONNECTED, &wl->status);
-+		cfg80211_disconnected(ndev, 0, NULL, 0, GFP_KERNEL);
++		cfg80211_disconnected(ndev, 0, NULL, 0, false, GFP_KERNEL);
 +		return -1;
 +	}
 +
